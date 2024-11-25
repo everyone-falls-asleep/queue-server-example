@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SSE Client Simulation</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        line-height: 1.6;
+        margin: 2rem;
+      }
+      .status {
+        font-weight: bold;
+        color: green;
+      }
+      .error {
+        color: red;
+      }
+      .data {
+        margin-top: 1rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Server-Sent Events Simulation</h1>
+    <p>Status: <span class="status" id="status">Connecting...</span></p>
+    <div class="data">
+      <h2>Received Data</h2>
+      <p>
+        <strong>Connected Clients:</strong> <span id="connectedClients">-</span>
+      </p>
+      <p><strong>Your Position:</strong> <span id="yourPosition">-</span></p>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/event-source-polyfill@1.0.31/src/eventsource.min.js"></script>
+    <script>
+      let clientId = null;
+      let heartbeatInterval = null;
+      const token = "my-token";
+
+      document.cookie = "token=your-jwt-token; path=/;";
+
+      // Initialize SSE connection
+      // const eventSource = new EventSource("/sse", {
+      //   headers: {
+      //     Authorization: `Bearer ${token}`,
+      //   },
+      // });
+      const eventSource = new EventSourcePolyfill("/sse", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const statusElement = document.getElementById("status");
+      const connectedClientsElement =
+        document.getElementById("connectedClients");
+      const yourPositionElement = document.getElementById("yourPosition");
+
+      // Handle incoming messages
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          // 고유 ID를 서버로부터 수신
+          if (data.clientId) {
+            clientId = data.clientId;
+            console.log("Received Client ID:", clientId);
+
+            // Heartbeat 시작
+            startHeartbeat();
+            return;
+          }
+
+          // Ping 메시지 무시
+          if (data.ping) {
+            console.log("Ping message received, ignoring.");
+            return;
+          }
+
+          connectedClientsElement.textContent = data.connectedClients;
+          yourPositionElement.textContent = data.yourPosition;
+        } catch (e) {
+          console.error("Error parsing message:", event.data);
+        }
+      };
+
+      // Handle connection open
+      eventSource.onopen = () => {
+        statusElement.textContent = "Connected";
+        statusElement.classList.remove("error");
+        statusElement.classList.add("status");
+      };
+
+      // Handle connection errors
+      eventSource.onerror = () => {
+        statusElement.textContent = "Error: Connection lost";
+        statusElement.classList.remove("status");
+        statusElement.classList.add("error");
+
+        // Heartbeat 중지
+        stopHeartbeat();
+      };
+
+      // 페이지를 떠날 때 Heartbeat 중지
+      window.addEventListener("beforeunload", () => {
+        stopHeartbeat();
+      });
+
+      // Heartbeat 시작 함수
+      function startHeartbeat() {
+        if (!heartbeatInterval && clientId) {
+          heartbeatInterval = setInterval(() => {
+            fetch("/heartbeat", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: clientId }),
+            }).catch((error) => {
+              console.error("Heartbeat failed:", error);
+            });
+          }, 4000);
+        }
+      }
+
+      // Heartbeat 중지 함수
+      function stopHeartbeat() {
+        if (heartbeatInterval) {
+          clearInterval(heartbeatInterval);
+          heartbeatInterval = null;
+        }
+      }
+    </script>
+  </body>
+</html>
